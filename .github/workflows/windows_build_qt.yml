@@ -142,7 +142,7 @@ jobs:
             cmake --build build --config Release || exit /b
             cmake --install build --config Release || exit /b
           ) else (
-            msbuild "PCSX2_qt.sln" /m /v:m /p:Configuration="${{ inputs.configuration }}" /p:Platform="${{ inputs.platform }}"
+            msbuild "PCSX2_qt.slnx" /m /v:m /p:Configuration="${{ inputs.configuration }}" /p:Platform="${{ inputs.platform }}"
           )
 
       - name: Run Tests
