@@ -61,8 +61,8 @@ set "PATH=%PATH%;%INSTALLDIR%\bin"
 
 cd "%BUILDDIR%"
 
-set QT=6.11.1
-set QTMINOR=6.11
+set QT=6.12.0-beta2
+set QTMINOR=6.12
 set QTAPNG=1.3.0
 
 set FFMPEG=8.1
@@ -99,11 +99,11 @@ set SHADERC_SPIRVTOOLS=6337eb62cadd7d124ac6789bf39c0f71148f0a73
 set AGILITYSDK=1.619.2
 set DXHEADERS=1.619.1
 
-call :downloadfile "qtbase-everywhere-src-%QT%.zip" "https://download.qt.io/official_releases/qt/%QTMINOR%/%QT%/submodules/qtbase-everywhere-src-%QT%.zip" 3529cc37297a5a7aae4486843b9fd41c30df1d79a770f85e240b537dcc327ca5 || goto error
-call :downloadfile "qtimageformats-everywhere-src-%QT%.zip" "https://download.qt.io/official_releases/qt/%QTMINOR%/%QT%/submodules/qtimageformats-everywhere-src-%QT%.zip" 37fba768f2780580dfae535ad6654cb9dc0bf2272e71b9b9781988de9ed0dac0 || goto error
-call :downloadfile "qtsvg-everywhere-src-%QT%.zip" "https://download.qt.io/official_releases/qt/%QTMINOR%/%QT%/submodules/qtsvg-everywhere-src-%QT%.zip" 767730188d4610a89bf8da502f87acf1c8881a3ac54f1e0eb167ab1e08b03a75 || goto error
-call :downloadfile "qttools-everywhere-src-%QT%.zip" "https://download.qt.io/official_releases/qt/%QTMINOR%/%QT%/submodules/qttools-everywhere-src-%QT%.zip" 2d6ed2a98f458152e3cb17bf0be0494250194933a2d937b5a434e5b2006efca9 || goto error
-call :downloadfile "qttranslations-everywhere-src-%QT%.zip" "https://download.qt.io/official_releases/qt/%QTMINOR%/%QT%/submodules/qttranslations-everywhere-src-%QT%.zip" eef43700ffd079f5893e435aca1330c8bdbf2a94ae45013e3fc63870df53d3b0 || goto error
+call :downloadfile "qtbase-everywhere-src-%QT%.zip" "https://download.qt.io/development_releases/qt/%QTMINOR%/%QT%/submodules/qtbase-everywhere-src-%QT%.zip" 4b664a8fb7d337d4f4679e02054342cf4ce7af25adbc73e3c90d7475ce8ab5d9 || goto error
+call :downloadfile "qtimageformats-everywhere-src-%QT%.zip" "https://download.qt.io/development_releases/qt/%QTMINOR%/%QT%/submodules/qtimageformats-everywhere-src-%QT%.zip" b4ffe62b43af8637b54953ceef5f509602eb9863e1c4c95db0be150c548557f1 || goto error
+call :downloadfile "qtsvg-everywhere-src-%QT%.zip" "https://download.qt.io/development_releases/qt/%QTMINOR%/%QT%/submodules/qtsvg-everywhere-src-%QT%.zip" 080e99f54e7e0e21b7d38ae62366182a3e8501e17f547ea9eb7d0b80564f8584 || goto error
+call :downloadfile "qttools-everywhere-src-%QT%.zip" "https://download.qt.io/development_releases/qt/%QTMINOR%/%QT%/submodules/qttools-everywhere-src-%QT%.zip" f573fb05876d808bc0186f141519712d523c1b203736fcf346ce40097a975ec7 || goto error
+call :downloadfile "qttranslations-everywhere-src-%QT%.zip" "https://download.qt.io/development_releases/qt/%QTMINOR%/%QT%/submodules/qttranslations-everywhere-src-%QT%.zip" ecd8a8ad886ddfa8b5e7b17f76076c33948ecf644c1bfebd902d2fdb3aaf728b || goto error
 call :downloadfile "QtApng-%QTAPNG%.zip" "https://github.com/jurplel/QtApng/archive/refs/tags/%QTAPNG%.zip" 5176082cdd468047a7eb1ec1f106b032f57df207aa318d559b29606b00d159ac || goto error
 
 call :downloadfile "ffmpeg-%FFMPEG%.tar.xz" "https://ffmpeg.org/releases/ffmpeg-%FFMPEG%.tar.xz" b072aed6871998cce9b36e7774033105ca29e33632be5b6347f3206898e0756a || goto error
