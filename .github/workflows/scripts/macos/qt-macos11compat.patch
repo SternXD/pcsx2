@@ -1,15 +1,15 @@
 diff --git a/.cmake.conf b/.cmake.conf
 --- a/.cmake.conf
 +++ b/.cmake.conf
-@@ -51,7 +51,7 @@ set(QT_MAX_NEW_POLICY_CMAKE_VERSION_QT_APPLE "3.21")
- set(QT_SUPPORTED_MIN_MACOS_SDK_VERSION "14")
+@@ -55,7 +55,7 @@ set(QT_MAX_NEW_POLICY_CMAKE_VERSION_QT_APPLE "3.21")
+ set(QT_SUPPORTED_MIN_MACOS_SDK_VERSION "15")
  set(QT_SUPPORTED_MAX_MACOS_SDK_VERSION "26")
- set(QT_SUPPORTED_MIN_MACOS_XCODE_VERSION "15")
--set(QT_SUPPORTED_MIN_MACOS_VERSION "13")
+ set(QT_SUPPORTED_MIN_MACOS_XCODE_VERSION "16")
+-set(QT_SUPPORTED_MIN_MACOS_VERSION "14.4")
 +set(QT_SUPPORTED_MIN_MACOS_VERSION "11")
  set(QT_SUPPORTED_MAX_MACOS_VERSION_TESTED "26")
  
- set(QT_SUPPORTED_MIN_IOS_SDK_VERSION "17")
+ set(QT_SUPPORTED_MIN_IOS_SDK_VERSION "18")
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
@@ -27,7 +27,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
 diff --git a/src/corelib/global/qsysinfo.cpp b/src/corelib/global/qsysinfo.cpp
 --- a/src/corelib/global/qsysinfo.cpp
 +++ b/src/corelib/global/qsysinfo.cpp
-@@ -1027,7 +1027,7 @@ QByteArray QSysInfo::machineUniqueId()
+@@ -1039,7 +1039,7 @@ QByteArray QSysInfo::machineUniqueId()
  {
  #if defined(Q_OS_DARWIN) && __has_include(<IOKit/IOKitLib.h>)
      char uuid[UuidStringLen + 1];
@@ -39,7 +39,7 @@ diff --git a/src/corelib/global/qsysinfo.cpp b/src/corelib/global/qsysinfo.cpp
 diff --git a/src/corelib/kernel/qcore_mac.mm b/src/corelib/kernel/qcore_mac.mm
 --- a/src/corelib/kernel/qcore_mac.mm
 +++ b/src/corelib/kernel/qcore_mac.mm
-@@ -367,7 +367,7 @@ bool qt_apple_runningWithLiquidGlass()
+@@ -413,7 +413,7 @@ std::optional<uint32_t> qt_mac_sipConfiguration()
              return config;
  #endif
  
@@ -48,10 +48,157 @@ diff --git a/src/corelib/kernel/qcore_mac.mm b/src/corelib/kernel/qcore_mac.mm
          if (!nvram) {
              qWarning("Failed to locate NVRAM entry in IO registry");
              return {};
+diff --git a/src/corelib/platform/darwin/qdarwinpermissionplugin_calendar.mm b/src/corelib/platform/darwin/qdarwinpermissionplugin_calendar.mm
+--- a/src/corelib/platform/darwin/qdarwinpermissionplugin_calendar.mm
++++ b/src/corelib/platform/darwin/qdarwinpermissionplugin_calendar.mm
+@@ -57,10 +57,17 @@
+         callback([self checkPermission:permission]);
+     };
+ 
+-    if (accessMode == QCalendarPermission::WriteOnly)
+-        [self.eventStore requestWriteOnlyAccessToEventsWithCompletion:completionHandler];
+-    else
+-        [self.eventStore requestFullAccessToEventsWithCompletion:completionHandler];
++    if (@available(macOS 14.0, *)) {
++        if (accessMode == QCalendarPermission::WriteOnly)
++            [self.eventStore requestWriteOnlyAccessToEventsWithCompletion:completionHandler];
++        else
++            [self.eventStore requestFullAccessToEventsWithCompletion:completionHandler];
++    } else {
++        QT_IGNORE_DEPRECATIONS(
++            [self.eventStore requestAccessToEntityType:EKEntityTypeEvent
++                completion:completionHandler];
++        )
++    }
+ }
+ 
+ @end
+diff --git a/src/corelib/thread/qfutex_mac_p.h b/src/corelib/thread/qfutex_mac_p.h
+--- a/src/corelib/thread/qfutex_mac_p.h
++++ b/src/corelib/thread/qfutex_mac_p.h
+@@ -22,6 +22,34 @@
+ 
+ #include <os/os_sync_wait_on_address.h>
+ 
++extern "C" {
++__attribute((__weak__))
++extern int __ulock_wait2(uint32_t operation, void *addr, uint64_t value,
++    uint64_t timeout, uint64_t value2);
++__attribute((__weak__))
++extern int __ulock_wake(uint32_t operation, void *addr, uint64_t wake_value);
++
++/*
++ * operation bits [7, 0] contain the operation code.
++ */
++#define UL_COMPARE_AND_WAIT             1
++#define UL_COMPARE_AND_WAIT_SHARED      3
++#define UL_COMPARE_AND_WAIT64           5
++#define UL_COMPARE_AND_WAIT64_SHARED    6
++
++/*
++ * operation bits [15, 8] contain the flags for __ulock_wake
++ */
++#define ULF_WAKE_ALL                    0x00000100
++#define ULF_WAKE_THREAD                 0x00000200
++#define ULF_WAKE_ALLOW_NON_OWNER        0x00000400
++
++/*
++ * operation bits [31, 24] contain the generic flags
++ */
++#define ULF_NO_ERRNO                    0x01000000
++} // extern "C"
++
+ #define QT_ALWAYS_USE_FUTEX
+ 
+ QT_BEGIN_NAMESPACE
+@@ -30,13 +58,30 @@ namespace QtDarwinFutex {
+ 
+ constexpr bool futexAvailable() { return true; }
+ 
++template <typename Atomic>
++inline uint32_t baseOperation(Atomic &)
++{
++    static_assert(sizeof(Atomic) >= sizeof(quint32), "Can only operate on 32- or 64-bit atomics");
++
++    uint32_t operation = ULF_NO_ERRNO;
++    if (sizeof(Atomic) == sizeof(quint32))
++        operation |= UL_COMPARE_AND_WAIT;
++    else
++        operation |= UL_COMPARE_AND_WAIT64;
++    return operation;
++}
++
+ template <typename Atomic>
+ inline void futexWait(Atomic &futex, typename Atomic::Type expectedValue)
+ {
+     QtTsan::futexRelease(&futex);
+     static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    os_sync_wait_on_address(&futex, quint64(expectedValue), sizeof(typename Atomic::Type),
+-                            OS_SYNC_WAIT_ON_ADDRESS_NONE);
++    if (__builtin_available(macOS 14.4, *)) {
++        os_sync_wait_on_address(&futex, quint64(expectedValue), sizeof(typename Atomic::Type),
++                                OS_SYNC_WAIT_ON_ADDRESS_NONE);
++    } else {
++        __ulock_wait2(baseOperation(futex), &futex, quint64(expectedValue), 0, 0);
++    }
+     QtTsan::futexAcquire(&futex);
+ }
+ 
+@@ -45,27 +90,41 @@ inline bool futexWait(Atomic &futex, typename Atomic::Type expectedValue, QDeadl
+ {
+     QtTsan::futexRelease(&futex);
+     static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    int r = os_sync_wait_on_address_with_timeout(
+-            &futex, quint64(expectedValue), sizeof(typename Atomic::Type),
+-            OS_SYNC_WAIT_ON_ADDRESS_NONE, OS_CLOCK_MACH_ABSOLUTE_TIME, timer.remainingTimeNSecs());
+-    QtTsan::futexAcquire(&futex);
+-    return r >= 0 || errno != ETIMEDOUT;
++    if (__builtin_available(macOS 14.4, *)) {
++        int r = os_sync_wait_on_address_with_timeout(
++                &futex, quint64(expectedValue), sizeof(typename Atomic::Type),
++                OS_SYNC_WAIT_ON_ADDRESS_NONE, OS_CLOCK_MACH_ABSOLUTE_TIME, timer.remainingTimeNSecs());
++        QtTsan::futexAcquire(&futex);
++        return r >= 0 || errno != ETIMEDOUT;
++    } else {
++        int r = __ulock_wait2(baseOperation(futex), &futex, quint64(expectedValue), timer.remainingTimeNSecs(), 0);
++        QtTsan::futexAcquire(&futex);
++        return r == 0 || r != -ETIMEDOUT;
++    }
+ }
+ 
+ template <typename Atomic>
+ inline void futexWakeAll(Atomic &futex)
+ {
+     static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    os_sync_wake_by_address_all(&futex, sizeof(typename Atomic::Type),
+-                                OS_SYNC_WAKE_BY_ADDRESS_NONE);
++    if (__builtin_available(macOS 14.4, *)) {
++        os_sync_wake_by_address_all(&futex, sizeof(typename Atomic::Type),
++                                    OS_SYNC_WAKE_BY_ADDRESS_NONE);
++    } else {
++        __ulock_wake(baseOperation(futex) | ULF_WAKE_ALL, &futex, 0);
++    }
+ }
+ 
+ template <typename Atomic>
+ inline void futexWakeOne(Atomic &futex)
+ {
+     static_assert(sizeof(typename Atomic::Type) == 4 || sizeof(typename Atomic::Type) == 8);
+-    os_sync_wake_by_address_any(&futex, sizeof(typename Atomic::Type),
+-                                OS_SYNC_WAKE_BY_ADDRESS_NONE);
++    if (__builtin_available(macOS 14.4, *)) {
++        os_sync_wake_by_address_any(&futex, sizeof(typename Atomic::Type),
++                                    OS_SYNC_WAKE_BY_ADDRESS_NONE);
++    } else {
++        __ulock_wake(baseOperation(futex), &futex, 0);
++    }
+ }
+ } //namespace QtDarwinFutex
+ 
 diff --git a/src/gui/platform/darwin/qappleiconengine.mm b/src/gui/platform/darwin/qappleiconengine.mm
 --- a/src/gui/platform/darwin/qappleiconengine.mm
 +++ b/src/gui/platform/darwin/qappleiconengine.mm
-@@ -366,12 +366,16 @@
+@@ -373,12 +373,16 @@ auto *configuredImage(const NSImage *image, const QColor &color)
                                                 weight:NSFontWeightRegular
                                                 scale:NSImageSymbolScaleLarge];
  
@@ -72,7 +219,7 @@ diff --git a/src/gui/platform/darwin/qappleiconengine.mm b/src/gui/platform/darw
  
      // Then switch back to monochrome, as palette mode gives a different look
      // than monochrome, even with a single color.
-@@ -379,6 +383,18 @@
+@@ -386,6 +390,18 @@ auto *configuredImage(const NSImage *image, const QColor &color)
          [NSImageSymbolConfiguration configurationPreferringMonochrome]];
  
      return [image imageWithSymbolConfiguration:config];
@@ -91,10 +238,239 @@ diff --git a/src/gui/platform/darwin/qappleiconengine.mm b/src/gui/platform/darw
  }
  #elif defined(QT_PLATFORM_UIKIT)
  auto *configuredImage(const UIImage *image, const QColor &color)
+diff --git a/src/gui/rhi/qrhimetal.mm b/src/gui/rhi/qrhimetal.mm
+--- a/src/gui/rhi/qrhimetal.mm
++++ b/src/gui/rhi/qrhimetal.mm
+@@ -669,9 +669,13 @@ bool QRhiMetal::create(QRhi::Flags flags)
+             caps.supportedSampleCounts.append(sampleCount);
+     }
+ 
+-    caps.indirectCommandBuffers = ([d->dev supportsFamily:MTLGPUFamilyApple5]
+-        || [d->dev supportsFamily:MTLGPUFamilyMac2])
+-        && [d->dev supportsFamily:MTLGPUFamilyMetal3];
++    if (@available(macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
++        caps.indirectCommandBuffers = ([d->dev supportsFamily:MTLGPUFamilyApple5]
++            || [d->dev supportsFamily:MTLGPUFamilyMac2])
++            && [d->dev supportsFamily:MTLGPUFamilyMetal3];
++    } else {
++        caps.indirectCommandBuffers = false;
++    }
+ 
+     caps.shadingRateMap = [d->dev supportsRasterizationRateMapWithLayerCount: 1];
+     if (caps.shadingRateMap && caps.multiView)
+diff --git a/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm b/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm
+--- a/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm
++++ b/src/plugins/platforms/cocoa/qcocoaapplicationdelegate.mm
+@@ -425,8 +425,10 @@ QT_USE_NAMESPACE
+ 
+ - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)application
+ {
+-    if ([reflectionDelegate respondsToSelector:_cmd])
+-        return [reflectionDelegate applicationSupportsSecureRestorableState:application];
++    if (@available(macOS 12.0, *)) {
++        if ([reflectionDelegate respondsToSelector:_cmd])
++            return [reflectionDelegate applicationSupportsSecureRestorableState:application];
++    }
+ 
+     // We don't support or implement state restorations via the AppKit
+     // state restoration APIs, but if we did, we would/should support
+diff --git a/src/plugins/platforms/cocoa/qcocoascreen.mm b/src/plugins/platforms/cocoa/qcocoascreen.mm
+--- a/src/plugins/platforms/cocoa/qcocoascreen.mm
++++ b/src/plugins/platforms/cocoa/qcocoascreen.mm
+@@ -611,96 +611,108 @@ QPixmap QCocoaScreen::grabWindow(WId view, int x, int y, int width, int height)
+     }
+ 
+     auto grabFromDisplay = [](CGDirectDisplayID displayId, const QRect &grabRect) -> QPixmap {
+-        QMacAutoReleasePool pool;
+-
+-        const qreal scale = QCocoaScreen::nativeScreenForDisplayId(displayId).backingScaleFactor;
+-
+-        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+-        auto cleanup = qScopeGuard([sem]() { dispatch_release(sem); });
+-
+-        auto captureShareableContent = [sem](void (^capture)(SCShareableContent *)) {
+-            // Try capturing all applications first, as that's the expectation of
+-            // grabWindow. This will also trigger the permission system prompt on
+-            // first use, matching the behavior of CGDisplayCreateImageForRect.
+-            [SCShareableContent getShareableContentWithCompletionHandler:
+-                ^(SCShareableContent *content, NSError *error) {
+-                    if (error)
+-                        qCDebug(lcQpaScreen) << "Failed to capture all windows" << error;
+-                    if (content) {
+-                        capture(content);
+-                        return;
+-                    }
+-                    // Fall back to capturing only our app, again matching the behavior
+-                    // of CGDisplayCreateImageForRect when we don't have permission to
+-                    // capture all applications. This also includes the Dock and wallpaper.
+-                    [SCShareableContent getCurrentProcessShareableContentWithCompletionHandler:
+-                        ^(SCShareableContent *content, NSError *error) {
+-                            if (error)
+-                                qCWarning(lcQpaScreen) << "Failed to capture own windows" << error;
+-                            if (content)
+-                                capture(content);
+-                            else
+-                                dispatch_semaphore_signal(sem);
++        if (@available(macOS 14.4, *)) {
++            QMacAutoReleasePool pool;
++
++            const qreal scale = QCocoaScreen::nativeScreenForDisplayId(displayId).backingScaleFactor;
++
++            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
++            auto cleanup = qScopeGuard([sem]() { dispatch_release(sem); });
++
++            auto captureShareableContent = [sem](void (^capture)(SCShareableContent *)) {
++                // Try capturing all applications first, as that's the expectation of
++                // grabWindow. This will also trigger the permission system prompt on
++                // first use, matching the behavior of CGDisplayCreateImageForRect.
++                [SCShareableContent getShareableContentWithCompletionHandler:
++                    ^(SCShareableContent *content, NSError *error) {
++                        if (error)
++                            qCDebug(lcQpaScreen) << "Failed to capture all windows" << error;
++                        if (content) {
++                            capture(content);
++                            return;
+                         }
+-                    ];
+-                }
+-            ];
+-        };
++                        // Fall back to capturing only our app, again matching the behavior
++                        // of CGDisplayCreateImageForRect when we don't have permission to
++                        // capture all applications. This also includes the Dock and wallpaper.
++                        [SCShareableContent getCurrentProcessShareableContentWithCompletionHandler:
++                            ^(SCShareableContent *content, NSError *error) {
++                                if (error)
++                                    qCWarning(lcQpaScreen) << "Failed to capture own windows" << error;
++                                if (content)
++                                    capture(content);
++                                else
++                                    dispatch_semaphore_signal(sem);
++                            }
++                        ];
++                    }
++                ];
++            };
+ 
+-        __block QImage image;
+-        captureShareableContent(^(SCShareableContent *content) {
+-            Q_ASSERT(content);
++            __block QImage image;
++            captureShareableContent(^(SCShareableContent *content) {
++                Q_ASSERT(content);
+ 
+-            QMacAutoReleasePool pool;
++                QMacAutoReleasePool pool;
+ 
+-            SCDisplay *scDisplay = nil;
+-            for (SCDisplay *d in content.displays) {
+-                if (d.displayID == displayId) {
+-                    scDisplay = d;
+-                    break;
++                SCDisplay *scDisplay = nil;
++                for (SCDisplay *d in content.displays) {
++                    if (d.displayID == displayId) {
++                        scDisplay = d;
++                        break;
++                    }
+                 }
+-            }
+-            if (!scDisplay) {
+-                qCWarning(lcQpaScreen) << "No SCDisplay for display" << displayId;
+-                dispatch_semaphore_signal(sem);
+-                return;
+-            }
+-
+-            SCContentFilter *filter = [[[SCContentFilter alloc]
+-                initWithDisplay:scDisplay
+-                includingApplications:content.applications
+-                exceptingWindows:@[]] autorelease];
+-            filter.includeMenuBar = YES;
+-
+-            SCStreamConfiguration *config = [[SCStreamConfiguration new] autorelease];
+-            config.sourceRect = grabRect.toCGRect();
+-            config.width = qRound(grabRect.width()  * scale);
+-            config.height = qRound(grabRect.height() * scale);
+-            config.showsCursor = NO;
+-            config.capturesAudio = NO;
+-            config.ignoreShadowsDisplay = NO;
+-            config.ignoreShadowsSingleWindow = NO;
+-
+-            [SCScreenshotManager captureImageWithFilter:filter configuration:config
+-                completionHandler:^(CGImageRef cgImage, NSError *error) {
+-                    if (error)
+-                        qCWarning(lcQpaScreen) << "Failed screen capture" << error;
+-                    else if (cgImage)
+-                        image = qt_mac_toQImage(cgImage);
++                if (!scDisplay) {
++                    qCWarning(lcQpaScreen) << "No SCDisplay for display" << displayId;
+                     dispatch_semaphore_signal(sem);
++                    return;
+                 }
+-            ];
+-        });
+ 
+-        // Wait for screen capture to complete
+-        if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
+-            qCWarning(lcQpaScreen) << "Screen capture timed out for display" << displayId;
+-            return QPixmap();
+-        }
++                SCContentFilter *filter = [[[SCContentFilter alloc]
++                    initWithDisplay:scDisplay
++                    includingApplications:content.applications
++                    exceptingWindows:@[]] autorelease];
++                filter.includeMenuBar = YES;
++
++                SCStreamConfiguration *config = [[SCStreamConfiguration new] autorelease];
++                config.sourceRect = grabRect.toCGRect();
++                config.width = qRound(grabRect.width()  * scale);
++                config.height = qRound(grabRect.height() * scale);
++                config.showsCursor = NO;
++                config.capturesAudio = NO;
++                config.ignoreShadowsDisplay = NO;
++                config.ignoreShadowsSingleWindow = NO;
++
++                [SCScreenshotManager captureImageWithFilter:filter configuration:config
++                    completionHandler:^(CGImageRef cgImage, NSError *error) {
++                        if (error)
++                            qCWarning(lcQpaScreen) << "Failed screen capture" << error;
++                        else if (cgImage)
++                            image = qt_mac_toQImage(cgImage);
++                        dispatch_semaphore_signal(sem);
++                    }
++                ];
++            });
+ 
+-        QPixmap pixmap = QPixmap::fromImage(image);
+-        pixmap.setDevicePixelRatio(scale);
+-        return pixmap;
++            // Wait for screen capture to complete
++            if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
++                qCWarning(lcQpaScreen) << "Screen capture timed out for display" << displayId;
++                return QPixmap();
++            }
++
++            QPixmap pixmap = QPixmap::fromImage(image);
++            pixmap.setDevicePixelRatio(scale);
++            return pixmap;
++        } else {
++            QCFType<CGImageRef> image = CGDisplayCreateImageForRect(displayId, grabRect.toCGRect());
++            const QCFType<CGColorSpaceRef> sRGBcolorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
++            if (CGImageGetColorSpace(image) != sRGBcolorSpace) {
++                qCDebug(lcQpaScreen) << "applying color correction for display" << displayId;
++                image = CGImageCreateCopyWithColorSpace(image, sRGBcolorSpace);
++            }
++            QPixmap pixmap = QPixmap::fromImage(qt_mac_toQImage(image));
++            pixmap.setDevicePixelRatio(QCocoaScreen::nativeScreenForDisplayId(displayId).backingScaleFactor);
++            return pixmap;
++        }
+     };
+ 
+     QRect grabRect = QRect(x, y, width, height);
 diff --git a/src/plugins/platforms/cocoa/qcocoawindow.mm b/src/plugins/platforms/cocoa/qcocoawindow.mm
 --- a/src/plugins/platforms/cocoa/qcocoawindow.mm
 +++ b/src/plugins/platforms/cocoa/qcocoawindow.mm
-@@ -323,6 +323,8 @@ a normal (not maximized or full screen) top-level window.
+@@ -408,6 +408,8 @@ QMargins QCocoaWindow::safeAreaMargins() const
          m_view.safeAreaInsets.bottom
      };
  
@@ -103,7 +479,7 @@ diff --git a/src/plugins/platforms/cocoa/qcocoawindow.mm b/src/plugins/platforms
      // The screen's safe area insets represent the distances from the screen's
      // edges at which content isn't obscured. The view's safe area margins do
      // not include the screen's insets automatically, so we need to manually
-@@ -355,6 +357,10 @@ a normal (not maximized or full screen) top-level window.
+@@ -437,6 +439,10 @@ QMargins QCocoaWindow::safeAreaMargins() const
      };
  
      return (screenSafeAreaMargins | viewSafeAreaMargins).toMargins();

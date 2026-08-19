@@ -253,7 +253,7 @@ patch -p1 < "$SCRIPTDIR/qt110-xcode264.patch"
 patch -u src/tools/macdeployqt/shared/shared.cpp <<EOF
 --- shared.cpp
 +++ shared.cpp
-@@ -1122,14 +1122,8 @@
+@@ -1167,14 +1167,8 @@
          addPlugins(QStringLiteral("networkinformation"));
      }
  
