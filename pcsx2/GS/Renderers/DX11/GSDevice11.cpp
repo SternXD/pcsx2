@@ -4,7 +4,7 @@
 #include "GS.h"
 #include "GS/GSGL.h"
 #include "GSDevice11.h"
-#include "GS/Renderers/DX11/D3D.h"
+#include "GS/Renderers/Common/DXGI.h"
 #include "GS/GSExtra.h"
 #include "GS/GSPerfMon.h"
 #include "GS/GSUtil.h"
@@ -112,11 +112,11 @@ bool GSDevice11::Create(GSVSyncMode vsync_mode, bool allow_present_throttle)
 	if (GSConfig.UseDebugDevice)
 		create_flags |= D3D11_CREATE_DEVICE_DEBUG;
 
-	m_dxgi_factory = D3D::CreateFactory(GSConfig.UseDebugDevice);
+	m_dxgi_factory = DXGI::CreateFactory(GSConfig.UseDebugDevice);
 	if (!m_dxgi_factory)
 		return false;
 
-	wil::com_ptr_nothrow<IDXGIAdapter1> dxgi_adapter = D3D::GetAdapterByName(m_dxgi_factory.get(), GSConfig.Adapter);
+	wil::com_ptr_nothrow<IDXGIAdapter1> dxgi_adapter = DXGI::GetAdapterByName(m_dxgi_factory.get(), GSConfig.Adapter);
 
 	static constexpr std::array<D3D_FEATURE_LEVEL, 3> requested_feature_levels = {{
 		D3D_FEATURE_LEVEL_11_1,
@@ -172,7 +172,7 @@ bool GSDevice11::Create(GSVSyncMode vsync_mode, bool allow_present_throttle)
 	wil::com_ptr_nothrow<IDXGIDevice> dxgi_device;
 	if (m_dev.try_query_to(&dxgi_device) && SUCCEEDED(dxgi_device->GetParent(IID_PPV_ARGS(dxgi_adapter.put()))))
 	{
-		m_name = D3D::GetAdapterName(dxgi_adapter.get());
+		m_name = DXGI::GetAdapterName(dxgi_adapter.get());
 		Console.WriteLn(fmt::format("D3D11: Adapter: {}", m_name));
 	}
 	else
@@ -206,7 +206,7 @@ bool GSDevice11::Create(GSVSyncMode vsync_mode, bool allow_present_throttle)
 		if (SUCCEEDED(m_dev->QueryInterface(dxgi_device.put())) &&
 			SUCCEEDED(dxgi_device->GetParent(IID_PPV_ARGS(dxgi_adapter.put()))))
 		{
-			m_features.broken_point_sampler = (D3D::GetVendorID(dxgi_adapter.get()) == D3D::VendorID::AMD);
+			m_features.broken_point_sampler = (DXGI::GetVendorID(dxgi_adapter.get()) == DXGI::VendorID::AMD);
 		}
 	}
 
@@ -805,7 +805,7 @@ bool GSDevice11::CreateSwapChain()
 		float fullscreen_refresh_rate;
 		m_is_exclusive_fullscreen =
 			GetRequestedExclusiveFullscreenMode(&fullscreen_width, &fullscreen_height, &fullscreen_refresh_rate) &&
-			D3D::GetRequestedExclusiveFullscreenModeDesc(m_dxgi_factory.get(), window_hwnd, fullscreen_width,
+			DXGI::GetRequestedExclusiveFullscreenModeDesc(m_dxgi_factory.get(), window_hwnd, fullscreen_width,
 				fullscreen_height, fullscreen_refresh_rate, swap_chain_format, &fullscreen_mode,
 				fullscreen_output.put());
 
@@ -1028,7 +1028,7 @@ std::string GSDevice11::GetDriverInfo() const
 				ret += StringUtil::WideStringToUTF8String(desc.Description);
 				ret += "\n";
 
-				const std::string driver_version(D3D::GetDriverVersionFromLUID(desc.AdapterLuid));
+				const std::string driver_version(DXGI::GetDriverVersionFromLUID(desc.AdapterLuid));
 				if (!driver_version.empty())
 				{
 					ret += "Driver Version: ";

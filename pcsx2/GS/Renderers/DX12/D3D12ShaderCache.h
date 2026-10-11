@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
-#include "GS/Renderers/DX11/D3D.h"
+#include "GS/Renderers/Common/D3DShaderCompiler.h"
 
 #include "common/Pcsx2Defs.h"
 #include "common/HashCombine.h"

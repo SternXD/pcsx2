@@ -39,7 +39,7 @@
 
 #include "GS/Renderers/DX11/GSDevice11.h"
 #include "GS/Renderers/DX12/GSDevice12.h"
-#include "GS/Renderers/DX11/D3D.h"
+#include "GS/Renderers/Common/DXGI.h"
 
 #endif
 
@@ -634,9 +634,9 @@ std::vector<GSAdapterInfo> GSGetAdapterInfo(GSRendererType renderer)
 		case GSRendererType::DX11:
 		case GSRendererType::DX12:
 		{
-			auto factory = D3D::CreateFactory(false);
+			auto factory = DXGI::CreateFactory(false);
 			if (factory)
-				ret = D3D::GetAdapterInfo(factory.get());
+				ret = DXGI::GetAdapterInfo(factory.get());
 		}
 		break;
 #endif

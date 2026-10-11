@@ -1103,8 +1103,11 @@
     <ClCompile Include="GS\GSCapture.cpp">
       <Filter>System\Ps2\GS\Window</Filter>
     </ClCompile>
-    <ClCompile Include="GS\Renderers\DX11\D3D.cpp">
-      <Filter>System\Ps2\GS\Renderers\Direct3D11</Filter>
+    <ClCompile Include="GS\Renderers\Common\D3DShaderCompiler.cpp">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="GS\Renderers\Common\DXGI.cpp">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
     </ClCompile>
     <ClCompile Include="GS\Renderers\Vulkan\GSTextureVK.cpp">
       <Filter>System\Ps2\GS\Renderers\Vulkan</Filter>
@@ -2021,8 +2024,11 @@
     <ClInclude Include="GS\GSCapture.h">
       <Filter>System\Ps2\GS\Window</Filter>
     </ClInclude>
-    <ClInclude Include="GS\Renderers\DX11\D3D.h">
-      <Filter>System\Ps2\GS\Renderers\Direct3D11</Filter>
+    <ClInclude Include="GS\Renderers\Common\D3DShaderCompiler.h">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="GS\Renderers\Common\DXGI.h">
+      <Filter>System\Ps2\GS\Renderers\Common</Filter>
     </ClInclude>
     <ClInclude Include="PerformanceMetrics.h">
       <Filter>System\Include</Filter>

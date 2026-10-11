@@ -5,7 +5,7 @@
 #include "GS/GSGL.h"
 #include "GS/GSPerfMon.h"
 #include "GS/GSUtil.h"
-#include "GS/Renderers/DX11/D3D.h"
+#include "GS/Renderers/Common/DXGI.h"
 #include "GS/Renderers/DX12/GSDevice12.h"
 #include "GS/Renderers/DX12/D3D12Builders.h"
 #include "GS/Renderers/DX12/D3D12ShaderCache.h"
@@ -289,11 +289,11 @@ bool GSDevice12::CreateDevice(u32& vendor_id)
 {
 	bool enable_debug_layer = GSConfig.UseDebugDevice;
 
-	m_dxgi_factory = D3D::CreateFactory(GSConfig.UseDebugDevice);
+	m_dxgi_factory = DXGI::CreateFactory(GSConfig.UseDebugDevice);
 	if (!m_dxgi_factory)
 		return false;
 
-	m_adapter = D3D::GetAdapterByName(m_dxgi_factory.get(), GSConfig.Adapter);
+	m_adapter = DXGI::GetAdapterByName(m_dxgi_factory.get(), GSConfig.Adapter);
 	vendor_id = GetAdapterVendorID();
 
 	HRESULT hr;
@@ -597,7 +597,7 @@ bool GSDevice12::ExecuteCommandList(WaitType wait_for_completion)
 			res.command_lists[1].list4->EndQuery(m_pipeline_statistics_query_heap.get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS, m_current_command_list);
 		}
 		res.command_lists[1].list4->ResolveQueryData(m_pipeline_statistics_query_heap.get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS,
-			m_current_command_list, 1, m_pipeline_statistics_query_buffer.get(), m_current_command_list * sizeof(D3D11_QUERY_DATA_PIPELINE_STATISTICS));
+			m_current_command_list, 1, m_pipeline_statistics_query_buffer.get(), m_current_command_list * sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS));
 	}
 
 	if (res.init_command_list_used)
@@ -998,7 +998,7 @@ bool GSDevice12::Create(GSVSyncMode vsync_mode, bool allow_present_throttle)
 		return false;
 	}
 
-	m_name = D3D::GetAdapterName(m_adapter.get());
+	m_name = DXGI::GetAdapterName(m_adapter.get());
 
 	if (!CreateDescriptorHeaps() || !CreateCommandLists() || !CreateTimestampQuery() || !CreatePipelineStatisticsQuery())
 		return false;
@@ -1123,7 +1123,7 @@ bool GSDevice12::CreateSwapChain()
 		float fullscreen_refresh_rate;
 		m_is_exclusive_fullscreen =
 			GetRequestedExclusiveFullscreenMode(&fullscreen_width, &fullscreen_height, &fullscreen_refresh_rate) &&
-			D3D::GetRequestedExclusiveFullscreenModeDesc(m_dxgi_factory.get(), window_hwnd, fullscreen_width,
+			DXGI::GetRequestedExclusiveFullscreenModeDesc(m_dxgi_factory.get(), window_hwnd, fullscreen_width,
 				fullscreen_height, fullscreen_refresh_rate, swap_chain_format, &fullscreen_mode,
 				fullscreen_output.put());
 
@@ -1348,7 +1348,7 @@ std::string GSDevice12::GetDriverInfo() const
 		ret += StringUtil::WideStringToUTF8String(desc.Description);
 		ret += "\n";
 
-		const std::string driver_version(D3D::GetDriverVersionFromLUID(desc.AdapterLuid));
+		const std::string driver_version(DXGI::GetDriverVersionFromLUID(desc.AdapterLuid));
 		if (!driver_version.empty())
 		{
 			ret += "Driver Version: ";

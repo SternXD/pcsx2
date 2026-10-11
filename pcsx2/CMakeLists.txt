@@ -691,7 +691,8 @@ if(WIN32)
 	)
 
 	list(APPEND pcsx2GSSources
-		GS/Renderers/DX11/D3D.cpp
+		GS/Renderers/Common/D3DShaderCompiler.cpp
+		GS/Renderers/Common/DXGI.cpp
 		GS/Renderers/DX11/D3D11ShaderCache.cpp
 		GS/Renderers/DX11/GSDevice11.cpp
 		GS/Renderers/DX11/GSTexture11.cpp
@@ -703,7 +704,8 @@ if(WIN32)
 		GS/Renderers/DX12/GSTexture12.cpp
 	)
 	list(APPEND pcsx2GSHeaders
-		GS/Renderers/DX11/D3D.h
+		GS/Renderers/Common/D3DShaderCompiler.h
+		GS/Renderers/Common/DXGI.h
 		GS/Renderers/DX11/D3D11ShaderCache.h
 		GS/Renderers/DX11/GSDevice11.h
 		GS/Renderers/DX11/GSTexture11.h

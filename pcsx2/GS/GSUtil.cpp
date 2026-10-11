@@ -5,6 +5,7 @@
 #include "GS/GSExtra.h"
 #include "GS/GSUtil.h"
 #include "MultiISA.h"
+#include "common/Console.h"
 #include "common/StringUtil.h"
 
 #include <array>
@@ -13,13 +14,8 @@
 #include "GS/Renderers/Vulkan/GSDeviceVK.h"
 #endif
 
-#ifdef _WIN32
-#include "common/RedtapeWindows.h"
-#include <d3dcommon.h>
-#include <dxgi.h>
-#include <VersionHelpers.h>
-#include "GS/Renderers/DX11/D3D.h"
-#include <wil/com.h>
+#if defined(_WIN32) && !defined(ARCH_ARM64)
+#include "GS/Renderers/Common/DXGI.h"
 #endif
 
 namespace {
@@ -273,6 +269,116 @@ u32 GSUtil::GetChannelMask(u32 spsm, u32 fbmsk)
 	return mask;
 }
 
+#if defined(_WIN32) && !defined(ARCH_ARM64)
+static GSRendererType GetPreferredRendererForWindows()
+{
+	const auto factory = DXGI::CreateFactory(false);
+	const auto adapter = DXGI::GetChosenOrFirstAdapter(factory.get(), GSConfig.Adapter);
+
+	// If we somehow can't get a D3D11 device, it's unlikely any of the renderers are going to work.
+	if (!adapter)
+		return GSRendererType::DX11;
+
+	/*
+	const auto get_d3d12_device = [&adapter]() {
+		wil::com_ptr_nothrow<ID3D12Device> device;
+		const HRESULT hr = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(device.put()));
+		if (FAILED(hr))
+			Console.Error("D3D12CreateDevice() for automatic renderer failed: %08X", hr);
+		return device;
+	};
+
+#ifdef ENABLE_VULKAN
+	static constexpr auto check_vulkan_supported = []() {
+		if (!GSDeviceVK::EnumerateGPUs().empty())
+			return true;
+
+		Host::AddIconOSDMessage("VKDriverUnsupported", ICON_FA_TV, TRANSLATE_STR("GS",
+			"The Vulkan graphics API was automatically selected, but no compatible devices were found.\n"
+			"       You should update all graphics drivers in your system, including any integrated GPUs\n"
+			"       to use the Vulkan renderer."), Host::OSD_WARNING_DURATION);
+		return false;
+	};
+#else
+	static constexpr auto check_vulkan_supported = []() { return false; };
+#endif
+	*/
+
+	switch (DXGI::GetVendorID(adapter.get()))
+	{
+		case DXGI::VendorID::Nvidia:
+		{
+			const std::optional<D3D_FEATURE_LEVEL> feature_level = DXGI::GetD3D11FeatureLevel(adapter.get());
+			if (!feature_level.has_value())
+				return GSRendererType::DX11;
+			else if (feature_level == D3D_FEATURE_LEVEL_12_0)
+				//return check_vulkan_supported() ? GSRendererType::VK : GSRendererType::OGL;
+				return GSRendererType::DX12;
+			else if (feature_level == D3D_FEATURE_LEVEL_11_0)
+				return GSRendererType::OGL;
+			else
+				return GSRendererType::DX11;
+		}
+
+		case DXGI::VendorID::AMD:
+		{
+			const std::optional<D3D_FEATURE_LEVEL> feature_level = DXGI::GetD3D11FeatureLevel(adapter.get());
+			if (!feature_level.has_value())
+				return GSRendererType::DX11;
+			else if (feature_level == D3D_FEATURE_LEVEL_12_0)
+				//return check_vulkan_supported() ? GSRendererType::VK : GSRendererType::DX12;
+				return GSRendererType::DX12;
+			else if (feature_level == D3D_FEATURE_LEVEL_11_1)
+				return GSRendererType::DX12;
+			else
+				return GSRendererType::DX11;
+		}
+
+		case DXGI::VendorID::Intel:
+		{
+			// Note1: Vulkan has broken barriers, prior to Xe.
+			// Sampler feedback Tier 0.9 is only present in Tiger Lake/Xe/Arc, so we can use that to
+			// differentiate between them. Unfortunately, that requires a D3D12 device.
+
+			// Note2: Keep DX11 default on Haswell/Broadwell as OpenGL is much much slower.
+			const std::optional<D3D_FEATURE_LEVEL> feature_level = DXGI::GetD3D11FeatureLevel(adapter.get());
+			if (!feature_level.has_value())
+				return GSRendererType::DX11;
+			else if (feature_level == D3D_FEATURE_LEVEL_12_0)
+			{
+				return GSRendererType::DX12;
+				/*
+				// Keep the old code as a reference if we need it.
+				const auto device12 = get_d3d12_device();
+				if (device12)
+				{
+					D3D12_FEATURE_DATA_D3D12_OPTIONS7 opts = {};
+					if (SUCCEEDED(device12->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &opts, sizeof(opts))) &&
+						(opts.SamplerFeedbackTier >= D3D12_SAMPLER_FEEDBACK_TIER_0_9) &&
+						check_vulkan_supported())
+					{
+						Console.WriteLn("Sampler feedback tier 0.9 found for Intel GPU, defaulting to Vulkan.");
+						return GSRendererType::VK;
+					}
+					else
+						return GSRendererType::OGL;
+				}
+
+				else
+					return GSRendererType::OGL;
+				*/
+			}
+			else
+				return GSRendererType::DX11;
+		}
+		break;
+
+		default:
+			return GSRendererType::DX11;
+	}
+}
+#endif
+
 GSRendererType GSUtil::GetPreferredRenderer()
 {
 	// Memorize the value, so we don't keep re-querying it.
@@ -287,7 +393,7 @@ GSRendererType GSUtil::GetPreferredRenderer()
 		preferred_renderer = GSRendererType::DX12;
 #elif defined(_WIN32)
 		// Use D3D device info to select renderer.
-		preferred_renderer = D3D::GetPreferredRenderer();
+		preferred_renderer = GetPreferredRendererForWindows();
 #else
 		// Linux: Prefer Vulkan if the driver isn't buggy.
 #if defined(ENABLE_VULKAN)
